@@ -23,18 +23,6 @@ esp32:
     type: arduino
 
 globals:
-  - id: status_light_was_on
-    type: bool
-    initial_value: 'false'
-
-  - id: blink_phase_on
-    type: bool
-    initial_value: 'false'
-
-  - id: blinking_active
-    type: bool
-    initial_value: 'false'
-
   - id: calibration_mode
     type: bool
     restore_value: true
@@ -82,9 +70,11 @@ button:
     name: "Water Once"
     icon: mdi:watering-can
     on_press:
+      - light.toggle: status_light
       - switch.turn_on: relay
       - delay: !lambda "return (uint32_t)(id(pump_duration).state * 1000);"
       - switch.turn_off: relay
+      - light.toggle: status_light
 
   - platform: template
     id: show_status
@@ -336,4 +326,3 @@ script:
           auto call = id(status_light).make_call();
           call.set_rgb(r1, g1, b1);
           call.perform();
-
