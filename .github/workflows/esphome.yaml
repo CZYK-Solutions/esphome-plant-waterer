@@ -1,0 +1,31 @@
+name: ESPHome Config Check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '**/*.yaml'
+jobs:
+  validate-esphome-config:
+    name: Validate ESPHome Config
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install ESPHome CLI
+        run: pip install esphome
+
+      - name: Validate ESPHome config
+        run: esphome config esphome.yaml
+

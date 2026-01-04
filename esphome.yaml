@@ -1,0 +1,328 @@
+substitutions:
+  device_name: "plant-waterer"
+  friendly_name: "Plant Waterer"
+  dry_pct_default: 30
+  wet_pct_default: 60
+  dry_adc_default: "1.795"
+  wet_adc_default: "1.390"
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  on_boot:
+    priority: -10
+    then:
+      - script.execute: update_plant_light
+      - light.turn_on:
+          id: status_light
+          brightness: 35%
+
+esp32:
+  board: m5stack-atom
+  framework:
+    type: arduino
+
+globals:
+  - id: calibration_mode
+    type: bool
+    restore_value: true
+    initial_value: 'false'
+
+light:
+  - platform: fastled_clockless
+    chipset: WS2812
+    pin: 27
+    num_leds: 1
+    rgb_order: grb
+    id: status_light
+    name: "Status Light"
+
+# ======================
+# SWITCHES
+# ======================
+
+switch:
+  - platform: gpio
+    pin: 26
+    id: relay
+    internal: true
+    name: "Water Pump"
+    icon: mdi:water-pump
+
+  - platform: template
+    id: calibration_mode_switch
+    name: "Calibration Mode"
+    entity_category: diagnostic
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    turn_on_action:
+      - lambda: id(calibration_mode) = true;
+    turn_off_action:
+      - lambda: id(calibration_mode) = false;
+
+# ======================
+# BUTTONS
+# ======================
+
+button:
+  - platform: template
+    id: water_once
+    name: "Water Once"
+    icon: mdi:watering-can
+    on_press:
+      - light.toggle: status_light
+      - switch.turn_on: relay
+      - delay: !lambda "return (uint32_t)(id(pump_duration).state * 1000);"
+      - switch.turn_off: relay
+      - light.toggle: status_light
+
+  - platform: template
+    id: show_status
+    name: "Show Status"
+    icon: mdi:lightbulb-on
+    internal: true
+    on_press:
+      - script.execute: update_plant_light
+      - light.toggle: status_light
+      - delay: 1s
+      - light.toggle: status_light
+
+# ======================
+# NUMBERS
+# ======================
+
+number:
+  - platform: template
+    id: pump_duration
+    name: "Pump Duration"
+    entity_category: config
+    optimistic: true
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "s"
+    initial_value: 10
+
+  - platform: template
+    id: dry_level
+    name: "Soil Dry Level (%)"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    initial_value: ${dry_pct_default}
+
+  - platform: template
+    id: wet_level
+    name: "Soil Wet Level (%)"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    initial_value: ${wet_pct_default}
+
+  - platform: template
+    id: soil_dry_adc
+    name: "Soil Dry Voltage (V)"
+    entity_category: diagnostic
+    optimistic: true
+    restore_value: true
+    min_value: 0.0
+    max_value: 4.0
+    step: 0.001
+    unit_of_measurement: "V"
+    initial_value: ${dry_adc_default}
+
+  - platform: template
+    id: soil_wet_adc
+    name: "Soil Wet Voltage (V)"
+    entity_category: diagnostic
+    optimistic: true
+    restore_value: true
+    min_value: 0.0
+    max_value: 4.0
+    step: 0.001
+    unit_of_measurement: "V"
+    initial_value: ${wet_adc_default}
+
+# ======================
+# SENSORS
+# ======================
+
+sensor:
+  - platform: adc
+    pin: 32
+    id: soil_moisture_raw
+    name: "Soil Moisture Raw (V)"
+    entity_category: diagnostic
+    attenuation: 12db
+    update_interval: 5s
+    unit_of_measurement: "V"
+    accuracy_decimals: 4
+    filters:
+      - round: 4
+
+  - platform: copy
+    source_id: soil_moisture_raw
+    id: soil_moisture_calibrated
+    name: "Soil Moisture Calibrated (V)"
+    entity_category: diagnostic
+    unit_of_measurement: "V"
+    accuracy_decimals: 3
+    filters:
+      - lambda: |-
+          if (x < 0.05f || x > 3.9f) return NAN;
+          return x;
+      - sliding_window_moving_average:
+          window_size: 720
+          send_every: 1
+      - median:
+          window_size: 60
+          send_every: 1
+      - round: 3
+    on_value:
+      then:
+        - lambda: |-
+            if (!id(calibration_mode)) return;
+
+            float calibrated = x;
+            const float eps = 0.002f;
+
+            if (calibrated < id(soil_wet_adc).state - eps)
+              id(soil_wet_adc).publish_state(calibrated);
+
+            if (calibrated > id(soil_dry_adc).state + eps)
+              id(soil_dry_adc).publish_state(calibrated);
+
+  - platform: copy
+    source_id: soil_moisture_calibrated
+    id: soil_moisture
+    name: "Soil Moisture (%)"
+    entity_category: ""
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    filters:
+      - lambda: |-
+          float dry = id(soil_dry_adc).state;
+          float wet = id(soil_wet_adc).state;
+          if (fabs(dry - wet) < 0.001f) return NAN;
+          float pct = (x - dry) * 100.0f / (wet - dry);
+          return clamp(pct, 0.0f, 100.0f);
+      - round: 1
+    on_value:
+      then:
+        - script.execute: update_plant_light
+
+# ======================
+# BINARY SENSORS
+# ======================
+
+binary_sensor:
+  - platform: template
+    id: soil_too_dry
+    name: "Soil Too Dry"
+    lambda: |-
+      return id(soil_moisture).state < id(dry_level).state;
+
+  - platform: template
+    id: soil_too_wet
+    name: "Soil Too Wet"
+    lambda: |-
+      return id(soil_moisture).state > id(wet_level).state;
+
+  - platform: gpio
+    id: main_button
+    name: "Main button"
+    icon: "mdi:gesture-tap-button"
+    internal: true
+    pin:
+      number: 39
+      inverted: true
+    on_multi_click:
+      # Single click
+      - timing:
+          - ON for at most 0.5s
+          - OFF for at least 0.3s
+        then:
+          - button.press: show_status
+
+      # Double click
+      - timing:
+          - ON for at most 0.5s
+          - OFF for at most 0.25s
+          - ON for at most 0.5s
+          - OFF for at least 0.3s
+        then:
+          - button.press: water_once
+
+      # Long press
+      - timing:
+          - ON for at least 1s
+        then:
+          - light.toggle: status_light
+
+# ======================
+# SCRIPT
+# ======================
+
+script:
+  - id: update_plant_light
+    mode: restart
+    then:
+      - lambda: |-
+          // Meetwaarde
+          float m = id(soil_moisture).state;
+          if (isnan(m)) return;
+
+          // Drempels
+          float dry = id(dry_level).state;
+          float wet = id(wet_level).state;
+          if (isnan(dry) || isnan(wet) || dry >= wet) return;
+
+          // HSV-hues
+          const float H_AMBER = 30.0f;
+          const float H_GREEN = 120.0f;
+          const float H_BLUE  = 220.0f;
+
+          float hue;
+          if (m <= dry) {
+            hue = H_AMBER;
+          } else if (m >= wet) {
+            hue = H_BLUE;
+          } else {
+            float mid = (dry + wet) / 2.0f;
+            if (m <= mid) {
+              float t = (m - dry) / (mid - dry + 1e-6f);
+              hue = H_AMBER + t * (H_GREEN - H_AMBER);
+            } else {
+              float t = (m - mid) / (wet - mid + 1e-6f);
+              hue = H_GREEN + t * (H_BLUE - H_GREEN);
+            }
+          }
+
+          // HSV → RGB conversie (S=1, V=1)
+          while (hue < 0) hue += 360.0f;
+          while (hue >= 360.0f) hue -= 360.0f;
+          float h = hue / 60.0f;
+          int i = (int) floorf(h);
+          float f = h - i;
+          float r1, g1, b1;
+          switch (i) {
+            case 0: r1 = 1;   g1 = f;   b1 = 0;   break;
+            case 1: r1 = 1-f; g1 = 1;   b1 = 0;   break;
+            case 2: r1 = 0;   g1 = 1;   b1 = f;   break;
+            case 3: r1 = 0;   g1 = 1-f; b1 = 1;   break;
+            case 4: r1 = f;   g1 = 0;   b1 = 1;   break;
+            default:r1 = 1;   g1 = 0;   b1 = 1-f; break;
+          }
+
+          // Stel de kleur in (zonder aanzetten)
+          auto call = id(status_light).make_call();
+          call.set_rgb(r1, g1, b1);
+          call.perform();
