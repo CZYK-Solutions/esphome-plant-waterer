@@ -1,0 +1,31 @@
+binary_sensor:
+  - platform: gpio
+    id: main_button
+    name: "Main button"
+    icon: "mdi:gesture-tap-button"
+    internal: true
+    pin:
+      number: 39
+      inverted: true
+    on_multi_click:
+      # Single click
+      - timing:
+          - ON for at most 0.5s
+          - OFF for at least 0.3s
+        then:
+          - button.press: show_status
+
+      # Double click
+      - timing:
+          - ON for at most 0.5s
+          - OFF for at most 0.25s
+          - ON for at most 0.5s
+          - OFF for at least 0.3s
+        then:
+          - button.press: water_once
+
+      # Long press
+      - timing:
+          - ON for at least 1s
+        then:
+          - light.toggle: status_light
