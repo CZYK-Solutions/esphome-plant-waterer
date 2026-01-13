@@ -91,7 +91,7 @@ sensor:
 button:
   - platform: template
     name: "Calibrate Dry"
-    icon: "mdi:water-percent-off"
+    icon: "mdi:water-outline"
     id: calibrate_soil_dry
     entity_category: diagnostic
     on_press:
@@ -101,7 +101,7 @@ button:
 
   - platform: template
     name: "Calibrate Wet"
-    icon: "mdi:water-percent"
+    icon: "mdi:water"
     id: calibrate_soil_wet
     entity_category: diagnostic
     on_press:
