@@ -1,0 +1,31 @@
+number:
+  - platform: template
+    id: pump_duration
+    name: "Pump Duration"
+    entity_category: config
+    optimistic: true
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "s"
+    initial_value: 2
+
+switch:
+  - platform: gpio
+    pin: 26
+    id: relay
+    internal: true
+    name: "Water Pump"
+    icon: mdi:water-pump
+
+button:
+  - platform: template
+    id: water_once
+    name: "Water Once"
+    icon: mdi:watering-can
+    on_press:
+      - light.toggle: status_light
+      - switch.turn_on: relay
+      - delay: !lambda "return (uint32_t)(id(pump_duration).state * 1000);"
+      - switch.turn_off: relay
+      - light.toggle: status_light

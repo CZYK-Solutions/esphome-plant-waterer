@@ -27,21 +27,17 @@ packages:
   base:
     url: https://github.com/CZYK-Solutions/esphome-plant-waterer
     files: [esphome.yaml]
-    ref: main
-    refresh: 1s
 
 substitutions:
   device_name: plant-waterer
   friendly_name: Plant Waterer
   dry_pct_default: 30
   wet_pct_default: 60
-  dry_adc_default: "1.795"
-  wet_adc_default: "1.390"
 ```
 
 ## What the package includes
 
-The package defined in `base.yaml` sets up:
+The package defined in `esphome.yaml` sets up:
 
 - ESP32 board configuration (Arduino framework)
 - Soil moisture sensor (ADC on `GPIO32`)
@@ -60,8 +56,6 @@ The package defined in `base.yaml` sets up:
 - **RGB LED color gradient**:
     - Amber (dry) → Green (optimal) → Blue (wet)
     - Smooth color transition based on soil moisture percentage
-- **Blinking alert**:
-    - LED blinks in current color if soil is too dry and the status light is off
 - **Physical button actions**:
     - Single click: show current status (LED on for 1s)
     - Double click: water once (pump runs for set duration)
@@ -72,31 +66,35 @@ The package defined in `base.yaml` sets up:
 
 ### Calibration mode (for dry/wet calibration)
 
-Calibration is controlled by a dedicated switch in Home Assistant called `Calibration Mode`.
+You can calibrate the sensor using two buttons in Home Assistant:
 
 **To calibrate the soil moisture sensor:**
 
-1. **Dry calibration:**
-  - Disconnect the sensor from any moisture (let it air dry or keep it in dry soil).
-  - Enable the `Calibration Mode` switch.
-  - The value of `Soil Dry Voltage (V)` will automatically update if the measured value is higher than the current setting.  
-    (If the value is lower, you can manually override it.)
+1. Disconnect the sensor from any moisture (let it air dry or keep it in dry soil).
+2. Press the `Calibrate Dry` button.
+   - The calibration will run and show progress in the `Soil Calibration State` and `Soil Calibration Instruction` text sensors.
+   - Wait until dry calibration completes.
+3. Place the sensor in a glass of water (fully wet). 
+   - Wait until `Soil Moisture Calibrated (V)` the sensor stabilizes (about 5 minutes).
+4. Press the Calibrate Wet` button.
+   - The calibration will run and show progress in the text sensors.
+   - Wait until calibration completes.
+3. **Manual adjustment:**
+   - You can always manually adjust `Soil Dry Voltage (V)` and `Soil Wet Voltage (V)` in Home Assistant if needed.
 
-2. **Wet calibration:**
-  - Place the sensor in a glass of water (fully wet).
-  - The value of `Soil Wet Voltage (V)` will automatically update if the measured value is lower than the current setting.  
-    (If the value is higher, you can manually override it.)
+**Calibration phases:**
+- `Uncalibrated` (phase 0): Neither dry nor wet is calibrated.
+- `Calibrating Dry` (phase 1): In progress.
+- `Calibrating Wet` (phase 2): In progress.
+- `Calibrated` (phase 4): Both dry and wet are calibrated.
 
-3. **Wait:**
-  - For both dry and wet calibration, it is recommended to leave the sensor in each state for about 15 minutes to allow readings to stabilize.
-
-4. **Finish:**
-  - Disable the `Calibration Mode` switch when done.
-
-You can always manually adjust `soil_dry_adc` and `soil_wet_adc` in Home Assistant if needed.
+**Note:**  
+Calibration is only complete when both dry and wet calibration phases are finished.  
+During calibration, the text sensors will show the current progress and instructions.  
+The sensor will show as "Uncalibrated" only when not calibrating and not yet calibrated.
 
 ## Deploying updates
 
 After the initial USB flash, subsequent changes can be uploaded over-the-air from the ESPHome dashboard.
 
-ESPHome will pull the latest `esphome.yaml` from this repository on every build (the `refresh` option forces a check every second when building), so keeping your local file minimal ensures you always use the newest features and settings.
+ESPHome will pull the latest `esphome.yaml` from this repository on every build, so keeping your local file minimal ensures you always use the newest features and settings.

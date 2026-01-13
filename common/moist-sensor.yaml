@@ -1,0 +1,276 @@
+number:
+  - platform: template
+    id: soil_dry_adc
+    name: "Soil Dry Voltage (V)"
+    entity_category: diagnostic
+    optimistic: true
+    restore_value: true
+    min_value: 0.0
+    max_value: 4.0
+    step: 0.001
+    unit_of_measurement: "V"
+    initial_value: nan
+
+  - platform: template
+    id: soil_wet_adc
+    name: "Soil Wet Voltage (V)"
+    entity_category: diagnostic
+    optimistic: true
+    restore_value: true
+    min_value: 0.0
+    max_value: 4.0
+    step: 0.001
+    unit_of_measurement: "V"
+    initial_value: nan
+    on_value:
+      - lambda: |-
+          float dry = id(soil_dry_adc).state;
+          float wet = id(soil_wet_adc).state;
+          if (dry > 0.0f && wet > 0.0f) {
+            id(soil_calibration_phase) = 4;
+            id(soil_calibration_state).publish_state("Calibrated");
+            id(soil_calibration_instruction).publish_state("Calibration complete. You may now use the sensor.");
+          }
+
+sensor:
+  - platform: adc
+    pin: 32
+    id: soil_moisture_raw
+    name: "Soil Moisture Raw (V)"
+    entity_category: diagnostic
+    attenuation: 12db
+    update_interval: 5s
+    unit_of_measurement: "V"
+    accuracy_decimals: 4
+    internal: true
+    filters:
+      - round: 4
+
+  - platform: copy
+    source_id: soil_moisture_raw
+    id: soil_moisture_calibrated
+    name: "Soil Moisture Calibrated (V)"
+    entity_category: diagnostic
+    unit_of_measurement: "V"
+    accuracy_decimals: 3
+    filters:
+      - lambda: |-
+          if (x < 0.05f || x > 3.9f) return NAN;
+          return x;
+      - sliding_window_moving_average:
+          window_size: 720
+          send_every: 1
+      - median:
+          window_size: 60
+          send_every: 1
+      - round: 3
+
+  - platform: copy
+    source_id: soil_moisture_calibrated
+    id: soil_moisture
+    name: "Soil Moisture (%)"
+    entity_category: ""
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    filters:
+      - lambda: |-
+          float dry = id(soil_dry_adc).state;
+          float wet = id(soil_wet_adc).state;
+          int phase = id(soil_calibration_phase);
+          if (phase == 0 && (isnan(dry) || isnan(wet) || fabs(dry - wet) < 0.001f)) {
+            id(soil_calibration_state).publish_state("Uncalibrated");
+            id(soil_calibration_instruction).publish_state("Please calibrate the sensor using the calibration buttons.");
+            return NAN;
+          }
+          // Don't overwrite state/instruction while calibrating (phases 1 or 2)
+          float pct = (x - dry) * 100.0f / (wet - dry);
+          return clamp(pct, 0.0f, 100.0f);
+      - round: 1
+    on_value:
+      then:
+        - script.execute: update_plant_light
+
+button:
+  - platform: template
+    name: "Calibrate Dry"
+    icon: "mdi:water-percent-off"
+    id: calibrate_soil_dry
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          id(soil_calibration_phase) = 1;
+      - script.execute: calibrate_soil_dry_flow
+
+  - platform: template
+    name: "Calibrate Wet"
+    icon: "mdi:water-percent"
+    id: calibrate_soil_wet
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          id(soil_calibration_phase) = 2;
+      - script.execute: calibrate_soil_wet_flow
+
+text_sensor:
+  - platform: template
+    id: soil_calibration_state
+    name: "Soil Calibration State"
+    icon: "mdi:progress-clock"
+    entity_category: diagnostic
+    update_interval: never
+
+  - platform: template
+    id: soil_calibration_instruction
+    name: "Soil Calibration Instruction"
+    icon: "mdi:comment-question-outline"
+    entity_category: diagnostic
+    update_interval: never
+
+globals:
+  - id: soil_calibration_samples
+    type: std::vector<float>
+    restore_value: no
+    initial_value: 'std::vector<float>()'
+  - id: soil_calibration_phase
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+script:
+  - id: calibrate_soil_dry_flow
+    mode: restart
+    then:
+      - lambda: |-
+          auto &samples = id(soil_calibration_samples);
+          samples.clear();
+          id(soil_calibration_state).publish_state("Calibrating Dry");
+          id(soil_calibration_instruction).publish_state("Keep your sensor dry in open air until calibration is completed");
+          ESP_LOGI("calibration", "Starting soil dry calibration...");
+      - repeat:
+          count: 12
+          then:
+            - lambda: |-
+                auto &samples = id(soil_calibration_samples);
+                float val = id(soil_moisture_raw).state;
+                if (!isnan(val)) {
+                  samples.push_back(val);
+                  ESP_LOGI("calibration", "Dry Sample: %.3f", val);
+                  id(soil_calibration_instruction).publish_state(
+                    "Dry calibration: " + std::to_string(samples.size()) + " samples collected"
+                  );
+                }
+            - delay: 5s
+      - while:
+          condition:
+            lambda: |-
+              auto &samples = id(soil_calibration_samples);
+              const int N = 5;
+              const float eps = 0.01f;
+              if (samples.size() < N) return true;
+              float min_v = samples[samples.size()-N];
+              float max_v = samples[samples.size()-N];
+              for (int i = samples.size()-N+1; i < samples.size(); ++i) {
+                if (samples[i] < min_v) min_v = samples[i];
+                if (samples[i] > max_v) max_v = samples[i];
+              }
+              return (max_v - min_v) > eps;
+          then:
+            - lambda: |-
+                auto &samples = id(soil_calibration_samples);
+                float val = id(soil_moisture_raw).state;
+                if (!isnan(val)) {
+                  samples.push_back(val);
+                  ESP_LOGI("calibration", "Dry Sample: %.3f", val);
+                  id(soil_calibration_instruction).publish_state(
+                    "Dry calibration: " + std::to_string(samples.size()) + " samples collected"
+                  );
+                }
+            - delay: 5s
+      - lambda: |-
+          auto &samples = id(soil_calibration_samples);
+          if (samples.size() == 0) {
+            id(soil_calibration_state).publish_state("Calibration Failed");
+            id(soil_calibration_instruction).publish_state("No valid dry samples collected. Try again.");
+            ESP_LOGW("calibration", "No valid dry samples collected.");
+            id(soil_calibration_phase) = 0;
+            return;
+          }
+          // Neem de maximale waarde voor dry
+          float max_val = samples[0];
+          for (size_t i = 1; i < samples.size(); ++i) {
+            if (samples[i] > max_val) max_val = samples[i];
+          }
+          ESP_LOGI("calibration", "Calibrated dry value (max): %.3f", max_val);
+          id(soil_dry_adc).publish_state(max_val);
+          id(soil_calibration_state).publish_state("Dry Calibrated");
+          id(soil_calibration_instruction).publish_state("Dry calibration complete. Now place the sensor in water and press 'Calibrate Wet'.");
+          id(soil_calibration_phase) = 0;
+
+  - id: calibrate_soil_wet_flow
+    mode: restart
+    then:
+      - lambda: |-
+          auto &samples = id(soil_calibration_samples);
+          samples.clear();
+          id(soil_calibration_state).publish_state("Calibrating Wet");
+          id(soil_calibration_instruction).publish_state("Place your sensor in water until calibration is completed");
+          ESP_LOGI("calibration", "Starting soil wet calibration...");
+      - repeat:
+          count: 12
+          then:
+            - lambda: |-
+                auto &samples = id(soil_calibration_samples);
+                float val = id(soil_moisture_raw).state;
+                if (!isnan(val)) {
+                  samples.push_back(val);
+                  ESP_LOGI("calibration", "Wet Sample: %.3f", val);
+                  id(soil_calibration_instruction).publish_state(
+                    "Wet calibration: " + std::to_string(samples.size()) + " samples collected"
+                  );
+                }
+            - delay: 5s
+      - while:
+          condition:
+            lambda: |-
+              auto &samples = id(soil_calibration_samples);
+              const int N = 5;
+              const float eps = 0.01f;
+              if (samples.size() < N) return true;
+              float min_v = samples[samples.size()-N];
+              float max_v = samples[samples.size()-N];
+              for (int i = samples.size()-N+1; i < samples.size(); ++i) {
+                if (samples[i] < min_v) min_v = samples[i];
+                if (samples[i] > max_v) max_v = samples[i];
+              }
+              return (max_v - min_v) > eps;
+          then:
+            - lambda: |-
+                auto &samples = id(soil_calibration_samples);
+                float val = id(soil_moisture_raw).state;
+                if (!isnan(val)) {
+                  samples.push_back(val);
+                  ESP_LOGI("calibration", "Wet Sample: %.3f", val);
+                  id(soil_calibration_instruction).publish_state(
+                    "Wet calibration: " + std::to_string(samples.size()) + " samples collected"
+                  );
+                }
+            - delay: 5s
+      - lambda: |-
+          auto &samples = id(soil_calibration_samples);
+          if (samples.size() == 0) {
+            id(soil_calibration_state).publish_state("Calibration Failed");
+            id(soil_calibration_instruction).publish_state("No valid wet samples collected. Try again.");
+            ESP_LOGW("calibration", "No valid wet samples collected.");
+            id(soil_calibration_phase) = 0;
+            return;
+          }
+          // Neem de minimale waarde voor wet
+          float min_val = samples[0];
+          for (size_t i = 1; i < samples.size(); ++i) {
+            if (samples[i] < min_val) min_val = samples[i];
+          }
+          ESP_LOGI("calibration", "Calibrated wet value (min): %.3f", min_val);
+          id(soil_wet_adc).publish_state(min_val);
+          id(soil_calibration_state).publish_state("Wet Calibrated");
+          id(soil_calibration_instruction).publish_state("Wet calibration complete. Calibration is done if you also calibrated dry.");
+          id(soil_calibration_phase) = 0;
