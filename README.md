@@ -86,7 +86,7 @@ You can calibrate the sensor using two buttons in Home Assistant:
 - `Uncalibrated` (phase 0): Neither dry nor wet is calibrated.
 - `Calibrating Dry` (phase 1): In progress.
 - `Calibrating Wet` (phase 2): In progress.
-- `Calibrated` (phase 4): Both dry and wet are calibrated.
+- `Calibrated` (phase 3): Both dry and wet are calibrated.
 
 **Note:**  
 Calibration is only complete when both dry and wet calibration phases are finished.  

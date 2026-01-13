@@ -27,7 +27,7 @@ number:
           float dry = id(soil_dry_adc).state;
           float wet = id(soil_wet_adc).state;
           if (dry > 0.0f && wet > 0.0f) {
-            id(soil_calibration_phase) = 4;
+            id(soil_calibration_phase) = 3;
             id(soil_calibration_state).publish_state("Calibrated");
             id(soil_calibration_instruction).publish_state("Calibration complete. You may now use the sensor.");
           }
