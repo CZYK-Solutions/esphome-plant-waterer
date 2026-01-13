@@ -76,10 +76,10 @@ You can calibrate the sensor using two buttons in Home Assistant:
    - Wait until dry calibration completes.
 3. Place the sensor in a glass of water (fully wet). 
    - Wait until `Soil Moisture Calibrated (V)` the sensor stabilizes (about 5 minutes).
-4. Press the Calibrate Wet` button.
+4. Press the `Calibrate Wet` button.
    - The calibration will run and show progress in the text sensors.
    - Wait until calibration completes.
-3. **Manual adjustment:**
+5. **Manual adjustment:**
    - You can always manually adjust `Soil Dry Voltage (V)` and `Soil Wet Voltage (V)` in Home Assistant if needed.
 
 **Calibration phases:**

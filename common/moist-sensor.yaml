@@ -22,15 +22,6 @@ number:
     step: 0.001
     unit_of_measurement: "V"
     initial_value: nan
-    on_value:
-      - lambda: |-
-          float dry = id(soil_dry_adc).state;
-          float wet = id(soil_wet_adc).state;
-          if (dry > 0.0f && wet > 0.0f) {
-            id(soil_calibration_phase) = 3;
-            id(soil_calibration_state).publish_state("Calibrated");
-            id(soil_calibration_instruction).publish_state("Calibration complete. You may now use the sensor.");
-          }
 
 sensor:
   - platform: adc
@@ -77,12 +68,19 @@ sensor:
           float dry = id(soil_dry_adc).state;
           float wet = id(soil_wet_adc).state;
           int phase = id(soil_calibration_phase);
-          if (phase == 0 && (isnan(dry) || isnan(wet) || fabs(dry - wet) < 0.001f)) {
-            id(soil_calibration_state).publish_state("Uncalibrated");
-            id(soil_calibration_instruction).publish_state("Please calibrate the sensor using the calibration buttons.");
+          
+          if (isnan(dry) || isnan(wet) || fabs(dry - wet) < 0.001f) {
+            if(phase == 0){
+              id(soil_calibration_state).publish_state("Uncalibrated");
+              id(soil_calibration_instruction).publish_state("Please calibrate the sensor using the calibration buttons.");
+            }
             return NAN;
           }
-          // Don't overwrite state/instruction while calibrating (phases 1 or 2)
+          
+          id(soil_calibration_phase) = 3;
+          id(soil_calibration_state).publish_state("Calibrated");
+          id(soil_calibration_instruction).publish_state("Calibration complete. You may now use the sensor.");
+
           float pct = (x - dry) * 100.0f / (wet - dry);
           return clamp(pct, 0.0f, 100.0f);
       - round: 1
