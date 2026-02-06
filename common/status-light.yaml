@@ -14,7 +14,7 @@ button:
     icon: mdi:lightbulb-on
     internal: true
     on_press:
-        - script.execute:
+      - script.execute:
           id: update_plant_light
           moisture: !lambda 'return id(soil_moisture).state;'
       - light.toggle: status_light
@@ -39,11 +39,11 @@ script:
           if (isnan(dry) || isnan(wet) || dry >= wet) return;
 
           // HSV-hues
-          const float H_RED     = 0.0f;
-          const float H_AMBER   = 30.0f;
-          const float H_GREEN   = 120.0f;
-          const float H_BLUE    = 220.0f;
-          const float H_DEEPBLUE= 260.0f;
+          const float H_RED      = 0.0f;
+          const float H_AMBER    = 30.0f;
+          const float H_GREEN    = 120.0f;
+          const float H_BLUE     = 220.0f;
+          const float H_DEEPBLUE = 260.0f;
 
           // Color bands based on dry/wet config:
           float margin = 10.0f;

@@ -16,7 +16,7 @@ esphome:
   on_boot:
     priority: -10
     then:
-        - script.execute:
+      - script.execute:
           id: update_plant_light
           moisture: !lambda 'return id(soil_moisture).state;'
       - light.turn_on:

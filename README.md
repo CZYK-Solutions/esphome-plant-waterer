@@ -1,4 +1,3 @@
-
 # Plant Waterer – ESPHome Package
 
 This repository provides a modular ESPHome configuration for automating plant watering with an ESP32 (tested with M5Stack Atom). It measures soil moisture, controls a water pump, and gives clear visual feedback via an RGB LED.
