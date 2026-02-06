@@ -30,6 +30,8 @@ script:
       - lambda: |-
           static float last_moisture = NAN;
           static float last_hue = NAN;
+          static float last_dry = NAN;
+          static float last_wet = NAN;
           float m = moisture;
           if (isnan(m)) return;
 
@@ -67,12 +69,18 @@ script:
             hue = H_DEEPBLUE;
           }
 
-          // Only update if moisture or hue changed
-          if (!isnan(last_moisture) && fabsf(m - last_moisture) < 0.01f && !isnan(last_hue) && fabsf(hue - last_hue) < 0.5f) {
+          // Only update if moisture, hue, or thresholds changed
+          bool moisture_unchanged = !isnan(last_moisture) && fabsf(m - last_moisture) < 0.01f;
+          bool hue_unchanged = !isnan(last_hue) && fabsf(hue - last_hue) < 0.5f;
+          bool dry_unchanged = !isnan(last_dry) && fabsf(dry - last_dry) < 0.01f;
+          bool wet_unchanged = !isnan(last_wet) && fabsf(wet - last_wet) < 0.01f;
+          if (moisture_unchanged && hue_unchanged && dry_unchanged && wet_unchanged) {
             return;
           }
           last_moisture = m;
           last_hue = hue;
+          last_dry = dry;
+          last_wet = wet;
           id(set_status_light_hue).execute(hue);
 
   - id: set_status_light_hue
