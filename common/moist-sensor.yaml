@@ -86,7 +86,9 @@ sensor:
       - round: 1
     on_value:
       then:
-        - script.execute: update_plant_light
+        - script.execute:
+            id: update_plant_light
+            moisture: !lambda 'return x;'
 
 button:
   - platform: template
