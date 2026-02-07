@@ -14,7 +14,9 @@ button:
     icon: mdi:lightbulb-on
     internal: true
     on_press:
-      - script.execute: update_plant_light
+      - script.execute:
+          id: update_plant_light
+          moisture: !lambda 'return id(soil_moisture).state;'
       - light.toggle: status_light
       - delay: 1s
       - light.toggle: status_light
@@ -22,10 +24,15 @@ button:
 script:
   - id: update_plant_light
     mode: restart
+    parameters:
+      moisture: float
     then:
       - lambda: |-
-          // Meetwaarde
-          float m = id(soil_moisture).state;
+          static float last_moisture = NAN;
+          static float last_hue = NAN;
+          static float last_dry = NAN;
+          static float last_wet = NAN;
+          float m = moisture;
           if (isnan(m)) return;
 
           // Drempels
@@ -34,30 +41,58 @@ script:
           if (isnan(dry) || isnan(wet) || dry >= wet) return;
 
           // HSV-hues
-          const float H_AMBER = 30.0f;
-          const float H_GREEN = 120.0f;
-          const float H_BLUE  = 220.0f;
+          const float H_RED      = 0.0f;
+          const float H_AMBER    = 30.0f;
+          const float H_GREEN    = 120.0f;
+          const float H_BLUE     = 220.0f;
+          const float H_DEEPBLUE = 260.0f;
+
+          // Color bands based on dry/wet config:
+          float margin = 10.0f;
+          float very_dry = dry - margin;
+          float very_wet = wet + margin;
 
           float hue;
-          if (m <= dry) {
-            hue = H_AMBER;
-          } else if (m >= wet) {
-            hue = H_BLUE;
+          if (m < very_dry) {
+            hue = H_RED;
+          } else if (m < dry) {
+            float t = (m - very_dry) / (dry - very_dry + 1e-6f);
+            t = fmaxf(0.0f, fminf(1.0f, t));
+            hue = H_RED + t * (H_AMBER - H_RED);
+          } else if (m <= wet) {
+            hue = H_GREEN;
+          } else if (m <= very_wet) {
+            float t = (m - wet) / (very_wet - wet + 1e-6f);
+            t = fmaxf(0.0f, fminf(1.0f, t));
+            hue = H_GREEN + t * (H_BLUE - H_GREEN);
           } else {
-            float mid = (dry + wet) / 2.0f;
-            if (m <= mid) {
-              float t = (m - dry) / (mid - dry + 1e-6f);
-              hue = H_AMBER + t * (H_GREEN - H_AMBER);
-            } else {
-              float t = (m - mid) / (wet - mid + 1e-6f);
-              hue = H_GREEN + t * (H_BLUE - H_GREEN);
-            }
+            hue = H_DEEPBLUE;
           }
 
-          // HSV → RGB conversie (S=1, V=1)
-          while (hue < 0) hue += 360.0f;
-          while (hue >= 360.0f) hue -= 360.0f;
-          float h = hue / 60.0f;
+          // Only update if moisture, hue, or thresholds changed
+          bool moisture_unchanged = !isnan(last_moisture) && fabsf(m - last_moisture) < 0.01f;
+          bool hue_unchanged = !isnan(last_hue) && fabsf(hue - last_hue) < 0.5f;
+          bool dry_unchanged = !isnan(last_dry) && fabsf(dry - last_dry) < 0.01f;
+          bool wet_unchanged = !isnan(last_wet) && fabsf(wet - last_wet) < 0.01f;
+          if (moisture_unchanged && hue_unchanged && dry_unchanged && wet_unchanged) {
+            return;
+          }
+          last_moisture = m;
+          last_hue = hue;
+          last_dry = dry;
+          last_wet = wet;
+          id(set_status_light_hue).execute(hue);
+
+  - id: set_status_light_hue
+    mode: restart
+    parameters:
+      hue: float
+    then:
+      - lambda: |-
+          float h = hue;
+          while (h < 0) h += 360.0f;
+          while (h >= 360.0f) h -= 360.0f;
+          h /= 60.0f;
           int i = (int) floorf(h);
           float f = h - i;
           float r1, g1, b1;
@@ -69,8 +104,6 @@ script:
             case 4: r1 = f;   g1 = 0;   b1 = 1;   break;
             default:r1 = 1;   g1 = 0;   b1 = 1-f; break;
           }
-
-          // Stel de kleur in (zonder aanzetten)
           auto call = id(status_light).make_call();
           call.set_rgb(r1, g1, b1);
           call.perform();
